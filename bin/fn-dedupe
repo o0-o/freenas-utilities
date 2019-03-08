@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# fn-dudpe parses dedupe stats from zpool status -D
+################################################################################
+# fn-dudpe parses/calculates dedupe stats (memory consumed or disk space saved)
 #
 # USAGE:
 #
