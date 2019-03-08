@@ -183,7 +183,7 @@ while getopts ":hkmgtp" opt; do
     t)  divisor=$(( 1024 * 1024 * 1024 * 1024 )) ||
         fatal
         ;;
-    p)  percent=1 &&
+    p)  percent=1 ||
         fatal
         ;;
     h)  help &&
@@ -323,7 +323,7 @@ echo "${alloc_lsize}" | grep -q "T" &&
   alloc_lsize="$( awk -v als="$( echo "${alloc_lsize}" | sed 's/T//' )" 'BEGIN { printf "%.2f", als * 1024 * 1024 * 1024 * 1024 }' )"
 
 [ ${percent} -eq 1 ] && [ "${subcommand}" = "disk" ] &&
-  divisor="$( awk -v total="$( zpool list -Hpo size "${zpool}" )" 'BEGIN { print int( size / 100 ) }' )"
+  divisor="$( awk -v size="$( zpool list -Hpo size "${zpool}" )" 'BEGIN { print int( size / 100 ) }' )"
 
 declare -r disk="$( awk -v rls="${ref_lsize}" -v als="${alloc_lsize}" -v div="${divisor}" 'BEGIN { print int( ( rls - als) / div ) }' )"
 
