@@ -165,6 +165,7 @@ declare __BLOCK="PROCESSING OPTIONS" &&
 debug &&
 
 declare divisor=1
+declare percent=0
 
 debug "Getting user options..." &&
 while getopts ":hkmgtp" opt; do
@@ -182,7 +183,7 @@ while getopts ":hkmgtp" opt; do
     t)  divisor=$(( 1024 * 1024 * 1024 * 1024 )) ||
         fatal
         ;;
-    p)  divisor="$( awk -v mem="$( sysctl -n hw.realmem )" 'BEGIN { printf "%.2f", mem / 100}' )" ||
+    p)  percent=1 &&
         fatal
         ;;
     h)  help &&
@@ -282,6 +283,9 @@ declare -r ddt_core="$( echo "${unparsed}" |
 
 debug "DDT Core: ${ddt_core}" &&
 
+[ ${percent} -eq 1 ] && [ "${subcommand}" = "mem" ] &&
+  divisor="$( awk -v mem="$( sysctl -n hw.realmem )" 'BEGIN { print int( mem / 100 ) }' )"
+
 declare -r mem="$(( ( ${ddt_entries} * ${ddt_core} ) / ${divisor} ))"
 
 declare ref_lsize="$( echo "${unparsed}" |
@@ -317,6 +321,9 @@ echo "${alloc_lsize}" | grep -q "G" &&
 
 echo "${alloc_lsize}" | grep -q "T" &&
   alloc_lsize="$( awk -v als="$( echo "${alloc_lsize}" | sed 's/T//' )" 'BEGIN { printf "%.2f", als * 1024 * 1024 * 1024 * 1024 }' )"
+
+[ ${percent} -eq 1 ] && [ "${subcommand}" = "disk" ] &&
+  divisor="$( awk -v total="$( zpool list -Hpo size "${zpool}" )" 'BEGIN { print int( size / 100 ) }' )"
 
 declare -r disk="$( awk -v rls="${ref_lsize}" -v als="${alloc_lsize}" -v div="${divisor}" 'BEGIN { print int( ( rls - als) / div ) }' )"
 
