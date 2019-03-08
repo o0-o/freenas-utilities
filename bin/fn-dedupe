@@ -68,7 +68,7 @@ declare -r __USER=$( whoami ) && #$USER env variable doesn't port to BSD
 declare -r __UUID="$( uuidgen )" &&
 declare -r __TIME="$( date +'%Y/%m/%d %H:%M:%S' )" && #comply with rclone convention
 
-declare __VERBOSITY=300 ||
+declare __VERBOSITY=200 ||
 
 fatal
 
