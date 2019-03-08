@@ -1,0 +1,329 @@
+#!/usr/bin env bash
+# fn-dudpe parses dedupe stats from zpool status -D
+#
+# USAGE:
+#
+#   fn-dedupe [-hkmgp] [mem|disk] [ZPOOL]
+#
+# OPTIONS:
+#
+#   -h
+#     Print usage and exit.
+#
+#   -k
+#     Prints result in kibobytes.
+#
+#   -m
+#     Prints result in mebibytes.
+#
+#   -g
+#     Prints result in gibibytes.
+#
+#   -t
+#     Prints result in tebibytes.
+#
+#   -p
+#     Prints result in percentage of total.
+#
+# The MIT License (MIT)
+# Copyright (c) 2019 dotDigital.digital
+################################################################################
+
+set -euo pipefail && #keep it professional
+
+declare -r __USAGE="fn-dedupe [-hkmgtp] [mem|disk] [ZPOOL]" ||
+exit 1 #in lieu of fatal function
+
+################################################################################
+# Function: fatal
+# Output: prints to sterr
+# Actions: exits with code 1
+################################################################################
+
+# define fatal first for minimal error reporting in early stages
+function fatal {
+  echo "$( date +'%Y/%m/%d %H:%M:%S' || echo "0000/00/00 00:00:00" ) FATAL : ${__BLOCK-Fatal error occurred}" 1>&2
+  exit 1
+}
+
+
+
+################################################################################
+__BLOCK="DECLARING CONSTANTS AND DEFAULTS" &&
+################################################################################
+
+# do not trust user's $PATH at all
+declare -r __ENV_PATH=${PATH} &&
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" &&
+hash -r || #sometimes necessary to refresh $path
+
+fatal
+
+# defining useful meta variables with as much pure bash as possible
+declare -r __PID=$$ &&
+declare -r __SELF="${0##*/}" &&
+declare -r __DIR=$( cd "${0%/*}"; pwd -P ) && #absolute path
+declare -r __HOST_NAME=$( hostname ) &&
+declare -r __USER=$( whoami ) && #$USER env variable doesn't port to BSD
+declare -r __UUID="$( uuidgen )" &&
+declare -r __TIME="$( date +'%Y/%m/%d %H:%M:%S' )" || #comply with rclone convention
+
+fatal
+
+
+
+################################################################################
+__BLOCK="DECLARING LOG AND HELP FUNCTIONS"
+################################################################################
+
+################################################################################
+# Functions: now
+# Output: prints current timestamp
+################################################################################
+
+function now {
+  echo $( date +'%Y/%m/%d %H:%M:%S' ) || # match rclone convention
+  return 1
+  return 0
+}
+
+################################################################################
+# Functions: log debug info warn error
+# Arguments: event description
+# Output: prints to sterr and log file, uses $__BLOCK as default message
+################################################################################
+
+function log { #for passing stderr to our log
+  echo -e "${1-$( now ) WARN  : Empty log call.}" | tee -a "${__LOG}" >&2 ||
+  return 1
+  return 0
+}
+
+function debug {
+
+  # stderr
+  [ ${__VERBOSITY} -gt 499 ] &&
+    echo "$( now ) DEBUG : ${1-$__BLOCK}" >&2 ||
+  [ ${__VERBOSITY} -lt 500 ] ||
+  return 1
+
+  return 0
+}
+
+function info {
+
+  # stderr
+  [ ${__VERBOSITY} -gt 399 ] &&
+    echo "$( now ) INFO  : ${1-$__BLOCK}" >&2 ||
+  [ ${__VERBOSITY} -lt 400 ] ||
+  return 1
+
+  return 0
+}
+
+function warn {
+
+  # stderr
+  [ ${__VERBOSITY} -gt 299 ] &&
+    echo "$( now ) WARN  : ${1-$__BLOCK}" >&2 ||
+  [ ${__VERBOSITY} -lt 300 ] ||
+  return 1
+
+  return 0
+}
+
+function error {
+
+  # stderr
+  [ ${__VERBOSITY} -gt 199 ] &&
+    echo "$( now ) ERROR : ${1-$__BLOCK}" >&2 ||
+  [ ${__VERBOSITY} -lt 200 ] ||
+  return 1
+
+  return 0
+}
+
+################################################################################
+# Functions: help
+# Output: prints usage
+################################################################################
+
+function help {
+  echo "Usage: $__USAGE" ||
+  return 1
+  return 0
+}
+
+
+
+################################################################################
+declare __BLOCK="PROCESSING OPTIONS" &&
+################################################################################
+
+debug &&
+
+declare divisor=1
+
+debug "Getting user options..." &&
+while getopts ":h" opt; do
+  debug "Processing option: -${opt}"
+	case "${opt}" in
+    k)  divisor=1024 &&
+        exit 0 ||
+        fatal
+        ;;
+    m)  divisor=$(( 1024 * 1024 )) &&
+        exit 0 ||
+        fatal
+        ;;
+    g)  divisor=$(( 1024 * 1024 * 1024 )) &&
+        exit 0 ||
+        fatal
+        ;;
+    t)  divisor=$(( 1024 * 1024 * 1024 * 1024 )) &&
+        exit 0 ||
+        fatal
+        ;;
+    p)  divisor="$( awk -v mem="$( sysctl -n hw.realmem )" 'BEGIN { printf "%.2f", mem / 100}' )" &&
+        help &&
+        exit 0 ||
+        fatal
+        ;;
+    h)  help &&
+        exit 0 ||
+        fatal
+        ;;
+    \?) error "Invalid Option: -${OPTARG}." &&
+        help &&
+        fatal
+        ;;
+	esac
+done &&
+shift $((${OPTIND} - 1)) ||
+
+fatal
+
+
+
+################################################################################
+declare __BLOCK="SELF CHECK" &&
+################################################################################
+
+debug &&
+
+[ -z "$( which "${__SELF}" 2>/dev/null )" ] &&
+warn "${__SELF} not found in \$PATH." || #good to know sometimes
+
+{ cmp -s "${__DIR}/${__SELF}" "$( which "${__SELF}" )" ||
+  warn "Another version of this script is installed on this system at: $( which "${__SELF}" )"
+} ||
+
+{ cmp -s "${__DIR}/${__SELF}" "$( which ${__SELF} )" &&
+  debug "Using installed version of ${__SELF} at $( which "${__SELF}" ) "
+} ||
+
+fatal
+
+
+
+################################################################################
+declare __BLOCK="AUDITING SUBCOMMAND" &&
+################################################################################
+
+debug &&
+
+{ [ ! -z "${1-}" ] &&
+  info "Subcommand: ${1}" &&
+  [ \( ${1} = "mem" \) -o \( ${1} = "disk" \) ] &&
+  debug "Subcommand is valid." &&
+  declare -r subcommand="${1}" &&
+  shift ||
+  ! error "Subcommand ${1} is invalid. $(help)"
+} ||
+
+fatal
+
+
+
+################################################################################
+declare __BLOCK="AUDITING ZPOOL" &&
+################################################################################
+
+debug &&
+
+zpools="$( zpool list -Ho name )"
+
+{ [ ! -z "${1-}" ] &&
+  echo "${zpools}" | grep -q "${1}" &&
+  debug "zpool found." &&
+  info "zpool: ${1}" &&
+  declare -r zpool="${1}" &&
+  shift ||
+  ! error "zpool ${1} is invalid. $(help)"
+} ||
+
+fatal
+
+
+
+################################################################################
+declare __BLOCK="PARSE" &&
+################################################################################
+
+declare -r unparsed="$( zpool status -D "${zpool}" )" &&
+
+declare -r ddt_entries="$( echo "${unparsed}" |
+  grep "DDT entries" |
+  cut -d , -f 1 |
+  cut -d ' ' -f 3 )" &&
+
+declare -r ddt_core="$( echo "${unparsed}" |
+  grep "DDT entries" |
+  cut -d , -f 3 |
+  cut -d ' ' -f 2 )" &&
+
+declare -r mem=$(( ( ${ddt_entries} * ${ddt_core} ) / ${divisor} ))
+
+declare ref_lsize="$( echo "${unparsed}" |
+  grep "Total" |
+  tr -s ' ' |
+  cut -d ' ' -f 8 )"
+
+echo "${ref_lsize}" | grep -q "K" &&
+  ref_lsize="$( awk -v rls="$( echo "${ref_lsize}" | sed 's/K//' )" 'BEGIN { printf "%.2f", rls * 1024 }' )"
+
+echo "${ref_lsize}" | grep -q "M" &&
+  ref_lsize="$( awk -v rls="$( echo "${ref_lsize}" | sed 's/M//' )" 'BEGIN { printf "%.2f", rls * 1024 * 1024 }' )"
+
+echo "${ref_lsize}" | grep -q "G" &&
+  ref_lsize="$( awk -v rls="$( echo "${ref_lsize}" | sed 's/G//' )" 'BEGIN { printf "%.2f", rls * 1024 * 1024 * 1024 }' )"
+
+echo "${ref_lsize}" | grep -q "T" &&
+  ref_lsize="$( awk -v rls="$( echo "${ref_lsize}" | sed 's/T//' )" 'BEGIN { printf "%.2f", rls * 1024 * 1024 * 1024 * 1024 }' )"
+
+declare -r alloc_lsize="$( echo "${unparsed}" |
+  grep "Total" |
+  tr -s ' ' |
+  cut -d ' ' -f 4 )"
+
+echo "${alloc_lsize}" | grep -q "K" &&
+  alloc_lsize="$( awk -v als="$( echo "${alloc_lsize}" | sed 's/K//' )" 'BEGIN { printf "%.2f", als * 1024 }' )"
+
+echo "${alloc_lsize}" | grep -q "M" &&
+  alloc_lsize="$( awk -v als="$( echo "${alloc_lsize}" | sed 's/M//' )" 'BEGIN { printf "%.2f", als * 1024 * 1024 }' )"
+
+echo "${alloc_lsize}" | grep -q "G" &&
+  alloc_lsize="$( awk -v als="$( echo "${alloc_lsize}" | sed 's/G//' )" 'BEGIN { printf "%.2f", als * 1024 * 1024 * 1024 }' )"
+
+echo "${alloc_lsize}" | grep -q "T" &&
+  alloc_lsize="$( awk -v als="$( echo "${alloc_lsize}" | sed 's/T//' )" 'BEGIN { printf "%.2f", als * 1024 * 1024 * 1024 * 1024 }' )"
+
+declare -r disk="$( awk -v rls="${ref_lsize}" -v als="${alloc_lsize}" -v div="${divisor}" 'BEGIN { print int( ( rls - als) / div ) }' )"
+
+[ "${subcommand}" = "mem" ] &&
+  echo "${mem}"
+
+[ "${subcommand}" = "disk" ] &&
+  echo "${disk}"
+
+exit 0
