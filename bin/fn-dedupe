@@ -1,4 +1,4 @@
-#!/usr/bin env bash
+#!/usr/bin/env bash
 # fn-dudpe parses dedupe stats from zpool status -D
 #
 # USAGE:
@@ -66,7 +66,9 @@ declare -r __DIR=$( cd "${0%/*}"; pwd -P ) && #absolute path
 declare -r __HOST_NAME=$( hostname ) &&
 declare -r __USER=$( whoami ) && #$USER env variable doesn't port to BSD
 declare -r __UUID="$( uuidgen )" &&
-declare -r __TIME="$( date +'%Y/%m/%d %H:%M:%S' )" || #comply with rclone convention
+declare -r __TIME="$( date +'%Y/%m/%d %H:%M:%S' )" && #comply with rclone convention
+
+declare __VERBOSITY=300 ||
 
 fatal
 
@@ -165,28 +167,22 @@ debug &&
 declare divisor=1
 
 debug "Getting user options..." &&
-while getopts ":h" opt; do
+while getopts ":hkmgtp" opt; do
   debug "Processing option: -${opt}"
 	case "${opt}" in
-    k)  divisor=1024 &&
-        exit 0 ||
+    k)  divisor=1024 ||
         fatal
         ;;
-    m)  divisor=$(( 1024 * 1024 )) &&
-        exit 0 ||
+    m)  divisor=$(( 1024 * 1024 )) ||
         fatal
         ;;
-    g)  divisor=$(( 1024 * 1024 * 1024 )) &&
-        exit 0 ||
+    g)  divisor=$(( 1024 * 1024 * 1024 )) ||
         fatal
         ;;
-    t)  divisor=$(( 1024 * 1024 * 1024 * 1024 )) &&
-        exit 0 ||
+    t)  divisor=$(( 1024 * 1024 * 1024 * 1024 )) ||
         fatal
         ;;
-    p)  divisor="$( awk -v mem="$( sysctl -n hw.realmem )" 'BEGIN { printf "%.2f", mem / 100}' )" &&
-        help &&
-        exit 0 ||
+    p)  divisor="$( awk -v mem="$( sysctl -n hw.realmem )" 'BEGIN { printf "%.2f", mem / 100}' )" ||
         fatal
         ;;
     h)  help &&
@@ -275,14 +271,18 @@ declare -r unparsed="$( zpool status -D "${zpool}" )" &&
 declare -r ddt_entries="$( echo "${unparsed}" |
   grep "DDT entries" |
   cut -d , -f 1 |
-  cut -d ' ' -f 3 )" &&
+  cut -d ' ' -f 5 )" &&
+
+debug "DDT Entries: ${ddt_entries}" &&
 
 declare -r ddt_core="$( echo "${unparsed}" |
   grep "DDT entries" |
   cut -d , -f 3 |
   cut -d ' ' -f 2 )" &&
 
-declare -r mem=$(( ( ${ddt_entries} * ${ddt_core} ) / ${divisor} ))
+debug "DDT Core: ${ddt_core}" &&
+
+declare -r mem="$(( ( ${ddt_entries} * ${ddt_core} ) / ${divisor} ))"
 
 declare ref_lsize="$( echo "${unparsed}" |
   grep "Total" |
@@ -301,7 +301,7 @@ echo "${ref_lsize}" | grep -q "G" &&
 echo "${ref_lsize}" | grep -q "T" &&
   ref_lsize="$( awk -v rls="$( echo "${ref_lsize}" | sed 's/T//' )" 'BEGIN { printf "%.2f", rls * 1024 * 1024 * 1024 * 1024 }' )"
 
-declare -r alloc_lsize="$( echo "${unparsed}" |
+declare alloc_lsize="$( echo "${unparsed}" |
   grep "Total" |
   tr -s ' ' |
   cut -d ' ' -f 4 )"
